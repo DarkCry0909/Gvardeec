@@ -1,6 +1,7 @@
 package com.example.guardhr
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -41,14 +42,24 @@ fun showNotification(ctx: Context, events: List<Event>) {
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
     ) return
     val nm = ctx.getSystemService(NotificationManager::class.java)
-    nm.createNotificationChannel(NotificationChannel("deadlines", "Сроки документов", NotificationManager.IMPORTANCE_HIGH))
+    val channel = NotificationChannel("deadlines", "Сроки документов", NotificationManager.IMPORTANCE_HIGH)
+    channel.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+    nm.createNotificationChannel(channel)
     val lines = events.map { "${it.employee}: ${it.doc.title} — ${it.note}" }
     val open = PendingIntent.getActivity(ctx, 0, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+    // Версия для заблокированного экрана — без ФИО и названий документов
+    val publicVersion = NotificationCompat.Builder(ctx, "deadlines")
+        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setContentTitle("Гвардеец")
+        .setContentText("Есть приближающиеся сроки документов")
+        .build()
     val n = NotificationCompat.Builder(ctx, "deadlines")
         .setSmallIcon(android.R.drawable.ic_dialog_info)
         .setContentTitle("Сроки документов: ${events.size}")
         .setContentText(lines.first())
         .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n")))
+        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setPublicVersion(publicVersion)
         .setContentIntent(open)
         .setAutoCancel(true)
         .build()

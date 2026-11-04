@@ -5,13 +5,13 @@ import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
 import java.time.temporal.ChronoUnit
 
-enum class DocType(val title: String, val hasExpiry: Boolean, val hint: String) {
-    PASSPORT("Паспорт", false, ""),
-    LICENSE("Лицензия охранника", true, "Напоминания: за 5 мес. и за 3,5 мес. до окончания"),
-    RANK("Квалификационный разряд", false, ""),
-    MEDICAL("Медицинская справка", true, "Напоминание: за 2 недели до окончания"),
-    WEAPON("Справка на оружие", true, "Напоминание: за 2 недели до окончания"),
-    PERIODIC("Периодическая проверка", true, "Напоминания: за 2 мес. и за 1,5 мес. до окончания")
+enum class DocType(val title: String, val hasExpiry: Boolean, val expiryRequired: Boolean, val hint: String) {
+    PASSPORT("Паспорт", true, false, ""),
+    LICENSE("Лицензия охранника", true, true, "Напоминания: за 5 мес. и за 3,5 мес. до окончания"),
+    RANK("Квалификационный разряд", false, false, ""),
+    MEDICAL("Медицинская справка", true, true, "Напоминание: за 2 недели до окончания"),
+    WEAPON("Справка на оружие", true, true, "Напоминание: за 2 недели до окончания"),
+    PERIODIC("Периодическая проверка", true, true, "Напоминания: за 2 мес. и за 1,5 мес. до окончания")
 }
 
 /** Даты напоминаний относительно окончания срока. */

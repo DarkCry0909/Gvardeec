@@ -28,7 +28,7 @@ private val MONTHS = listOf("Январь", "Февраль", "Март", "Ап�
 private val SECTIONS = listOf("Предприятия", "Адреса", "Документы", "Сотрудники", "Охр. объекты", "КХО (СС)", "Оружие (СС)", "Учредители")
 
 @Composable
-fun App() {
+fun App(onSecureChanged: (Boolean) -> Unit) {
     val ctx = LocalContext.current
     val dao = remember { AppDb.get(ctx).dao() }
     val empFlow = remember { dao.employees() }
@@ -44,10 +44,22 @@ fun App() {
                 icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Календарь") })
             NavigationBarItem(selected = tab == 1, onClick = { tab = 1 },
                 icon = { Icon(Icons.Default.Menu, null) }, label = { Text("Реестр") })
+            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 },
+                icon = { Icon(Icons.Default.Settings, null) }, label = { Text("Настройки") })
         }
     }) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) {
-            if (tab == 0) CalendarScreen(events) else RegistryScreen(dao, employees, docs)
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            Surface(color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxWidth()) {
+                Text("ГВАРДЕЕЦ", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (tab) {
+                    0 -> CalendarScreen(events)
+                    1 -> RegistryScreen(dao, employees, docs)
+                    else -> SettingsScreen(dao, onSecureChanged)
+                }
+            }
         }
     }
 }
@@ -131,7 +143,8 @@ fun RowScope.DayCell(day: Int, date: LocalDate, evs: List<Event>?, selected: Boo
 fun RegistryScreen(dao: AppDao, employees: List<Employee>, docs: List<EmployeeDoc>) {
     var idx by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = idx, edgePadding = 0.dp) {
+        ScrollableTabRow(selectedTabIndex = idx, edgePadding = 0.dp,
+            containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
             SECTIONS.forEachIndexed { i, s -> Tab(selected = i == idx, onClick = { idx = i }, text = { Text(s) }) }
         }
         if (SECTIONS[idx] == "Сотрудники") EmployeesScreen(dao, employees, docs) else SectionScreen(dao, SECTIONS[idx])
@@ -235,8 +248,8 @@ fun EmployeeList(dao: AppDao, employees: List<Employee>, docs: List<EmployeeDoc>
             Icon(Icons.Default.Add, "Добавить")
         }
     }
-    if (adding) FormDialog("Новый сотрудник", listOf("ФИО", "Должность", "Телефон"), { adding = false }) { v ->
-        scope.launch { dao.insertEmployee(Employee(fullName = v[0], position = v[1], phone = v[2])) }
+    if (adding) EmployeeDialog({ adding = false }) { emp ->
+        scope.launch { dao.insertEmployee(emp) }
         adding = false
     }
 }
@@ -259,6 +272,7 @@ fun EmployeeDetail(dao: AppDao, e: Employee, docs: List<EmployeeDoc>, onBack: ()
             }
         }
         item { Text(listOf(e.position, e.phone).filter { it.isNotBlank() }.joinToString(" · ")) }
+        e.birthDay?.let { item { Text("Дата рождения: ${LocalDate.ofEpochDay(it).fmtD()}") } }
         if (rank6 && !hasWeapon) item { Text("6 разряд: нужна справка на оружие — добавьте документ.", color = RED) }
         item { Button(onClick = { adding = true }) { Text("Добавить документ") } }
         items(docs.sortedBy { it.type }, key = { it.id }) { d ->
@@ -267,7 +281,14 @@ fun EmployeeDetail(dao: AppDao, e: Employee, docs: List<EmployeeDoc>, onBack: ()
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(t.title, fontWeight = FontWeight.Bold)
-                        if (d.number.isNotBlank()) Text(if (t == DocType.RANK) "Разряд: ${d.number}" else "№ ${d.number}")
+                        if (d.number.isNotBlank() || d.series.isNotBlank()) {
+                            Text(
+                                if (t == DocType.RANK) "Разряд: ${d.number}"
+                                else listOf(if (d.series.isNotBlank()) "Серия ${d.series}" else "", if (d.number.isNotBlank()) "№ ${d.number}" else "")
+                                    .filter { it.isNotBlank() }.joinToString(" ")
+                            )
+                        }
+                        if (d.issuedBy.isNotBlank()) Text("Кем выдан: ${d.issuedBy}")
                         d.issueDay?.let { Text("Выдан: ${LocalDate.ofEpochDay(it).fmtD()}") }
                         d.expiry?.let {
                             val n = daysLeft(it)
@@ -282,8 +303,11 @@ fun EmployeeDetail(dao: AppDao, e: Employee, docs: List<EmployeeDoc>, onBack: ()
         item { TextButton(onClick = { delEmp = true }) { Text("Удалить сотрудника", color = RED) } }
     }
 
-    if (adding) AddDocDialog(available, { adding = false }) { type, number, issue, expiry ->
-        scope.launch { dao.insertDoc(EmployeeDoc(employeeId = e.id, type = type.name, number = number, issueDay = issue, expiryDay = expiry)) }
+    if (adding) AddDocDialog(available, { adding = false }) { type, series, number, issuedBy, issue, expiry ->
+        scope.launch {
+            dao.insertDoc(EmployeeDoc(employeeId = e.id, type = type.name, number = number, issueDay = issue,
+                expiryDay = expiry, series = series, issuedBy = issuedBy))
+        }
         adding = false
     }
     delDoc?.let { d -> ConfirmDialog("Удалить документ «${d.docType.title}»?", { scope.launch { dao.deleteDoc(d) }; delDoc = null }, { delDoc = null }) }
@@ -294,12 +318,52 @@ fun EmployeeDetail(dao: AppDao, e: Employee, docs: List<EmployeeDoc>, onBack: ()
 }
 
 @Composable
-fun AddDocDialog(available: List<DocType>, onDismiss: () -> Unit, onSave: (DocType, String, Long?, Long?) -> Unit) {
+fun EmployeeDialog(onDismiss: () -> Unit, onSave: (Employee) -> Unit) {
+    var last by remember { mutableStateOf("") }
+    var first by remember { mutableStateOf("") }
+    var middle by remember { mutableStateOf("") }
+    var birth by remember { mutableStateOf("") }
+    var position by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Новый сотрудник") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(last, { last = it }, singleLine = true, label = { Text("Фамилия") })
+                OutlinedTextField(first, { first = it }, singleLine = true, label = { Text("Имя") })
+                OutlinedTextField(middle, { middle = it }, singleLine = true, label = { Text("Отчество") })
+                OutlinedTextField(birth, { birth = it }, singleLine = true, label = { Text("Дата рождения (дд.мм.гггг)") })
+                OutlinedTextField(position, { position = it }, singleLine = true, label = { Text("Должность") })
+                OutlinedTextField(phone, { phone = it }, singleLine = true, label = { Text("Телефон") })
+                error?.let { Text(it, color = RED) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = last.isNotBlank() && first.isNotBlank(), onClick = {
+                val b = if (birth.isBlank()) null else parseDate(birth)
+                if (birth.isNotBlank() && b == null) error = "Неверная дата рождения (дд.мм.гггг)"
+                else onSave(
+                    Employee(
+                        fullName = listOf(last, first, middle).map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" "),
+                        position = position.trim(), phone = phone.trim(), birthDay = b?.toEpochDay()
+                    )
+                )
+            }) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } })
+}
+
+@Composable
+fun AddDocDialog(available: List<DocType>, onDismiss: () -> Unit, onSave: (DocType, String, String, String, Long?, Long?) -> Unit) {
     var type by remember { mutableStateOf(available.first()) }
+    var series by remember { mutableStateOf("") }
     var number by remember { mutableStateOf("") }
+    var issuedBy by remember { mutableStateOf("") }
     var issue by remember { mutableStateOf("") }
     var expiry by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    val isRank = type == DocType.RANK
 
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Новый документ") },
         text = {
@@ -311,21 +375,24 @@ fun AddDocDialog(available: List<DocType>, onDismiss: () -> Unit, onSave: (DocTy
                     }
                 }
                 if (type.hint.isNotBlank()) Text(type.hint, style = MaterialTheme.typography.bodySmall)
+                if (!isRank) OutlinedTextField(series, { series = it }, singleLine = true, label = { Text("Серия") })
                 OutlinedTextField(number, { number = it }, singleLine = true,
-                    label = { Text(if (type == DocType.RANK) "Разряд (4, 5 или 6)" else "Серия и номер") })
+                    label = { Text(if (isRank) "Разряд (4, 5 или 6)" else "Номер") })
+                if (!isRank) OutlinedTextField(issuedBy, { issuedBy = it }, label = { Text("Кем выдан") })
                 OutlinedTextField(issue, { issue = it }, singleLine = true, label = { Text("Дата выдачи (дд.мм.гггг)") })
-                if (type.hasExpiry) OutlinedTextField(expiry, { expiry = it }, singleLine = true, label = { Text("Действует до (дд.мм.гггг)") })
+                if (type.hasExpiry) OutlinedTextField(expiry, { expiry = it }, singleLine = true,
+                    label = { Text(if (type.expiryRequired) "Действует до (дд.мм.гггг)" else "Действует до (если указан)") })
                 error?.let { Text(it, color = RED) }
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 val i = if (issue.isBlank()) null else parseDate(issue)
-                val x = if (type.hasExpiry) parseDate(expiry) else null
+                val x = if (type.hasExpiry && expiry.isNotBlank()) parseDate(expiry) else null
                 if (issue.isNotBlank() && i == null) error = "Неверная дата выдачи"
-                else if (type.hasExpiry && x == null) error = "Укажите срок действия в формате дд.мм.гггг"
-                else if (type == DocType.RANK && number.trim() !in listOf("4", "5", "6")) error = "Разряд: 4, 5 или 6"
-                else onSave(type, number.trim(), i?.toEpochDay(), x?.toEpochDay())
+                else if (type.hasExpiry && (type.expiryRequired || expiry.isNotBlank()) && x == null) error = "Укажите срок действия в формате дд.мм.гггг"
+                else if (isRank && number.trim() !in listOf("4", "5", "6")) error = "Разряд: 4, 5 или 6"
+                else onSave(type, if (isRank) "" else series.trim(), number.trim(), if (isRank) "" else issuedBy.trim(), i?.toEpochDay(), x?.toEpochDay())
             }) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } })
