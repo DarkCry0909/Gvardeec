@@ -27,18 +27,6 @@ Kotlin · Jetpack Compose (Material 3) · Room (SQLite) · WorkManager · Gradle
 
 Минимальная версия Android — 8.0 (API 26).
 
-## Сборка APK
-
-### Через GitHub Actions (без установки Android Studio)
-1. Загрузите проект в репозиторий GitHub (вместе с папкой `.github`).
-2. Откройте вкладку **Actions** → **Build APK** → **Run workflow** (запускается и автоматически при push в `main`).
-3. Дождитесь зелёной галочки, откройте запуск и скачайте артефакт **Gvardeec-apk** — внутри файл `app-debug.apk`.
-4. Скопируйте APK на смартфон и установите (разрешите установку из неизвестных источников).
-
-### Локально
-Откройте проект в Android Studio (Koala и новее) → **Build → Build APK(s)**.
-Либо в терминале: `gradle assembleDebug`, файл появится в `app/build/outputs/apk/debug/`.
-
 ## Структура проекта
 
 ```
