@@ -46,9 +46,10 @@ class MainActivity : FragmentActivity() {
     private fun Root() {
         var hasPin by remember { mutableStateOf(Sec.hasPin(this@MainActivity)) }
         when {
-            !hasPin -> SetupPinScreen { pin ->
+            !hasPin -> OnboardingScreen { name, pin, bio ->
+                Sec.setUserName(this@MainActivity, name)
                 Sec.setPin(this@MainActivity, pin)
-                Sec.setBiometric(this@MainActivity, canBiometric(this@MainActivity))
+                Sec.setBiometric(this@MainActivity, bio)
                 hasPin = true
                 Session.unlocked = true
             }

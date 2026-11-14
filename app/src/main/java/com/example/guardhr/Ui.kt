@@ -50,8 +50,12 @@ fun App(onSecureChanged: (Boolean) -> Unit) {
     }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Surface(color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxWidth()) {
-                Text("ГВАРДЕЕЦ", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("ГВАРДЕЕЦ", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    val who = remember { Sec.userName(ctx) }
+                    if (who.isNotBlank()) Text(who, color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.bodyMedium)
+                }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {

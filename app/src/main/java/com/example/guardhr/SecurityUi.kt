@@ -71,10 +71,12 @@ fun LockScreen(activity: FragmentActivity, onUnlock: () -> Unit) {
     val unlock = { Sec.resetFails(ctx); onUnlock() }
 
     LaunchedEffect(Unit) { while (true) { delay(1000); now = System.currentTimeMillis() } }
+    // Если включён вход по отпечатку — окно отпечатка открывается сразу при запуске
     LaunchedEffect(Unit) {
         if (useBio) {
-            delay(400)
-            if (activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) promptBiometric(activity, unlock)
+            var t = 0
+            while (!activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && t < 30) { delay(100); t++ }
+            promptBiometric(activity, unlock)
         }
     }
 
@@ -83,6 +85,8 @@ fun LockScreen(activity: FragmentActivity, onUnlock: () -> Unit) {
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Гвардеец", style = MaterialTheme.typography.headlineMedium)
+        val who = remember { Sec.userName(ctx) }
+        if (who.isNotBlank()) Text("Здравствуйте, $who", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(16.dp))
         PinField(pin, "PIN-код") { pin = it }
         if (lockSec > 0) Text("Слишком много попыток. Подождите $lockSec с.", color = ERR)

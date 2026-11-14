@@ -95,6 +95,8 @@ object Sec {
 
     fun biometricEnabled(c: Context) = p(c).getBoolean("bio", false)
     fun setBiometric(c: Context, v: Boolean) { p(c).edit().putBoolean("bio", v).commit() }
+    fun userName(c: Context) = p(c).getString("userName", "") ?: ""
+    fun setUserName(c: Context, v: String) { p(c).edit().putString("userName", v).commit() }
     fun themeMode(c: Context) = p(c).getInt("theme", 0)
     fun setThemeMode(c: Context, v: Int) { p(c).edit().putInt("theme", v).commit() }
     fun secureScreen(c: Context) = p(c).getBoolean("secure", true)
