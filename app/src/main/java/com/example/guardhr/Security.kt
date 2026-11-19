@@ -95,12 +95,6 @@ object Sec {
 
     fun biometricEnabled(c: Context) = p(c).getBoolean("bio", false)
     fun setBiometric(c: Context, v: Boolean) { p(c).edit().putBoolean("bio", v).commit() }
-    fun initialized(c: Context) = p(c).getBoolean("init", false) || p(c).contains("pinHash")
-    fun setInitialized(c: Context) { p(c).edit().putBoolean("init", true).commit() }
-    fun legacySalt(c: Context): String? = p(c).getString("pinSalt", null)
-    fun legacyHash(c: Context): String? = p(c).getString("pinHash", null)
-    fun lastUser(c: Context): Long = p(c).getLong("lastUser", 0L)
-    fun setLastUser(c: Context, id: Long) { p(c).edit().putLong("lastUser", id).commit() }
     fun userName(c: Context) = p(c).getString("userName", "") ?: ""
     fun setUserName(c: Context, v: String) { p(c).edit().putString("userName", v).commit() }
     fun lastUser(c: Context): Long = p(c).getLong("lastUser", 0L)
