@@ -95,8 +95,27 @@ object Sec {
 
     fun biometricEnabled(c: Context) = p(c).getBoolean("bio", false)
     fun setBiometric(c: Context, v: Boolean) { p(c).edit().putBoolean("bio", v).commit() }
+    fun initialized(c: Context) = p(c).getBoolean("init", false) || p(c).contains("pinHash")
+    fun setInitialized(c: Context) { p(c).edit().putBoolean("init", true).commit() }
+    fun legacySalt(c: Context): String? = p(c).getString("pinSalt", null)
+    fun legacyHash(c: Context): String? = p(c).getString("pinHash", null)
+    fun lastUser(c: Context): Long = p(c).getLong("lastUser", 0L)
+    fun setLastUser(c: Context, id: Long) { p(c).edit().putLong("lastUser", id).commit() }
     fun userName(c: Context) = p(c).getString("userName", "") ?: ""
     fun setUserName(c: Context, v: String) { p(c).edit().putString("userName", v).commit() }
+    fun lastUser(c: Context): Long = p(c).getLong("lastUser", 0L)
+    fun setLastUser(c: Context, v: Long) { p(c).edit().putLong("lastUser", v).commit() }
+    fun bioUser(c: Context): Long = p(c).getLong("bioUser", 0L)
+    fun setBioUser(c: Context, v: Long) { p(c).edit().putLong("bioUser", v).commit() }
+
+    /** PIN из версии с одним пользователем (соль, хэш) — переносится в учётную запись администратора. */
+    fun legacyPin(c: Context): Pair<String, String>? {
+        val s = p(c).getString("pinSalt", null) ?: return null
+        val h = p(c).getString("pinHash", null) ?: return null
+        return s to h
+    }
+    fun clearLegacyPin(c: Context) { p(c).edit().remove("pinSalt").remove("pinHash").commit() }
+
     fun themeMode(c: Context) = p(c).getInt("theme", 0)
     fun setThemeMode(c: Context, v: Int) { p(c).edit().putInt("theme", v).commit() }
     fun secureScreen(c: Context) = p(c).getBoolean("secure", true)
@@ -117,4 +136,16 @@ fun promptBiometric(a: FragmentActivity, onOk: () -> Unit) {
         .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)
         .build()
     prompt.authenticate(info)
+}
+
+/** Возвращает (соль, хэш) в Base64. */
+fun hashPin(pin: String): Pair<String, String> {
+    val salt = randomBytes(16)
+    return Base64.encodeToString(salt, Base64.NO_WRAP) to
+        Base64.encodeToString(pbkdf2(pin.toCharArray(), salt), Base64.NO_WRAP)
+}
+
+fun verifyPin(pin: String, saltB64: String, hashB64: String): Boolean {
+    val calc = pbkdf2(pin.toCharArray(), Base64.decode(saltB64, Base64.NO_WRAP))
+    return MessageDigest.isEqual(calc, Base64.decode(hashB64, Base64.NO_WRAP))
 }

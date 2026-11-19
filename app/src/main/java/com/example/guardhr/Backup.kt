@@ -36,13 +36,22 @@ object BackupCrypto {
     }
 }
 
+private fun JSONArray?.objs(): List<JSONObject> =
+    if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
+
+private fun JSONObject.longOrNull(key: String): Long? = if (isNull(key)) null else getLong(key)
+
+/** Учётные записи в копию не входят: они привязаны к устройству. */
 suspend fun exportJson(dao: AppDao): String {
     val o = JSONObject()
-    o.put("version", 1)
+    o.put("version", 2)
     o.put("employees", JSONArray().also { a ->
         dao.employeesOnce().forEach {
-            a.put(JSONObject().put("id", it.id).put("fullName", it.fullName).put("position", it.position).put("phone", it.phone)
-                    .put("birthDay", it.birthDay ?: JSONObject.NULL))
+            a.put(
+                JSONObject().put("id", it.id).put("fullName", it.fullName).put("position", it.position).put("phone", it.phone)
+                    .put("birthDay", it.birthDay ?: JSONObject.NULL).put("personnelNumber", it.personnelNumber)
+                    .put("hireDay", it.hireDay ?: JSONObject.NULL).put("isActive", it.isActive)
+            )
         }
     })
     o.put("docs", JSONArray().also { a ->
@@ -60,6 +69,28 @@ suspend fun exportJson(dao: AppDao): String {
             a.put(JSONObject().put("id", it.id).put("section", it.section).put("title", it.title).put("details", it.details))
         }
     })
+    o.put("posts", JSONArray().also { a ->
+        dao.postsOnce().forEach {
+            a.put(JSONObject().put("id", it.id).put("name", it.name).put("address", it.address).put("requiredGuards", it.requiredGuards))
+        }
+    })
+    o.put("shifts", JSONArray().also { a ->
+        dao.shiftsOnce().forEach {
+            a.put(
+                JSONObject().put("id", it.id).put("employeeId", it.employeeId).put("postId", it.postId)
+                    .put("startAt", it.startAt).put("endAt", it.endAt)
+                    .put("checkIn", it.checkIn ?: JSONObject.NULL).put("checkOut", it.checkOut ?: JSONObject.NULL)
+            )
+        }
+    })
+    o.put("incidents", JSONArray().also { a ->
+        dao.incidentsOnce().forEach {
+            a.put(
+                JSONObject().put("id", it.id).put("shiftId", it.shiftId).put("occurredAt", it.occurredAt)
+                    .put("category", it.category).put("description", it.description)
+            )
+        }
+    })
     return o.toString()
 }
 
@@ -70,41 +101,70 @@ suspend fun exportJson(dao: AppDao): String {
  */
 suspend fun importJson(ctx: Context, json: String, replace: Boolean) {
     val o = JSONObject(json)
-    fun JSONArray.objs() = (0 until length()).map { getJSONObject(it) }
-    val emps = o.getJSONArray("employees").objs().map {
-        Employee(it.getLong("id"), it.getString("fullName"), it.getString("position"), it.getString("phone"),
-            if (it.isNull("birthDay")) null else it.getLong("birthDay"))
+    val emps = o.optJSONArray("employees").objs().map {
+        val id = it.getLong("id")
+        Employee(
+            id = id, fullName = it.getString("fullName"), position = it.optString("position", ""),
+            phone = it.optString("phone", ""), birthDay = it.longOrNull("birthDay"),
+            personnelNumber = it.optString("personnelNumber", "").ifBlank { "T-$id" },
+            hireDay = it.longOrNull("hireDay"), isActive = it.optBoolean("isActive", true)
+        )
     }
-    val docs = o.getJSONArray("docs").objs().map {
+    val docs = o.optJSONArray("docs").objs().map {
         EmployeeDoc(
-            it.getLong("id"), it.getLong("employeeId"), it.getString("type"), it.getString("number"),
-            if (it.isNull("issueDay")) null else it.getLong("issueDay"),
-            if (it.isNull("expiryDay")) null else it.getLong("expiryDay"),
+            it.getLong("id"), it.getLong("employeeId"), it.getString("type"), it.optString("number", ""),
+            it.longOrNull("issueDay"), it.longOrNull("expiryDay"),
             it.optString("series", ""), it.optString("issuedBy", "")
         )
     }.filter { d -> DocType.values().any { it.name == d.type } }
-    val items = o.getJSONArray("items").objs().map {
-        SectionItem(it.getLong("id"), it.getString("section"), it.getString("title"), it.getString("details"))
+    val items = o.optJSONArray("items").objs().map {
+        SectionItem(it.getLong("id"), it.getString("section"), it.getString("title"), it.optString("details", ""))
     }
+    val posts = o.optJSONArray("posts").objs().map {
+        Post(it.getLong("id"), it.getString("name"), it.optString("address", ""), it.optInt("requiredGuards", 1))
+    }
+    val shifts = o.optJSONArray("shifts").objs().map {
+        Shift(it.getLong("id"), it.getLong("employeeId"), it.getLong("postId"), it.getLong("startAt"), it.getLong("endAt"),
+            it.longOrNull("checkIn"), it.longOrNull("checkOut"))
+    }
+    val incidents = o.optJSONArray("incidents").objs().map {
+        Incident(it.getLong("id"), it.getLong("shiftId"), it.getLong("occurredAt"), it.getString("category"), it.optString("description", ""))
+    }
+
     val db = AppDb.get(ctx)
     val dao = db.dao()
     db.withTransaction {
         if (replace) {
-            dao.clearDocs(); dao.clearEmployees(); dao.clearItems()
+            dao.clearIncidents(); dao.clearShifts(); dao.clearDocs(); dao.clearPosts(); dao.clearEmployees(); dao.clearItems()
             emps.forEach { dao.insertEmployee(it) }
             docs.forEach { dao.insertDoc(it) }
             items.forEach { dao.insertRow(it) }
+            posts.forEach { dao.insertPost(it) }
+            shifts.forEach { dao.insertShift(it) }
+            incidents.forEach { dao.insertIncident(it) }
         } else {
             val oldEmps = dao.employeesOnce()
             val oldDocs = dao.docsOnce()
             val oldItems = dao.itemsOnce()
-            val idMap = mutableMapOf<Long, Long>()
+            val oldPosts = dao.postsOnce()
+            val oldShifts = dao.shiftsOnce()
+            val oldIncidents = dao.incidentsOnce()
+
+            val usedNumbers = oldEmps.map { it.personnelNumber }.toMutableSet()
+            val empMap = mutableMapOf<Long, Long>()
             emps.forEach { e ->
-                val same = oldEmps.find { it.fullName == e.fullName && it.birthDay == e.birthDay }
-                idMap[e.id] = same?.id ?: dao.insertEmployee(e.copy(id = 0))
+                val same = oldEmps.find { it.personnelNumber == e.personnelNumber && it.fullName == e.fullName }
+                    ?: oldEmps.find { it.fullName == e.fullName && it.birthDay == e.birthDay }
+                if (same != null) empMap[e.id] = same.id
+                else {
+                    var num = e.personnelNumber
+                    while (num in usedNumbers) num += "-имп"
+                    usedNumbers.add(num)
+                    empMap[e.id] = dao.insertEmployee(e.copy(id = 0, personnelNumber = num))
+                }
             }
             docs.forEach { d ->
-                val nid = idMap[d.employeeId] ?: return@forEach
+                val nid = empMap[d.employeeId] ?: return@forEach
                 val exists = oldDocs.any {
                     it.employeeId == nid && it.type == d.type && it.series == d.series &&
                         it.number == d.number && it.expiryDay == d.expiryDay
@@ -114,6 +174,23 @@ suspend fun importJson(ctx: Context, json: String, replace: Boolean) {
             items.forEach { r ->
                 val exists = oldItems.any { it.section == r.section && it.title == r.title && it.details == r.details }
                 if (!exists) dao.insertRow(r.copy(id = 0))
+            }
+            val postMap = mutableMapOf<Long, Long>()
+            posts.forEach { p ->
+                val same = oldPosts.find { it.name == p.name && it.address == p.address }
+                postMap[p.id] = same?.id ?: dao.insertPost(p.copy(id = 0))
+            }
+            val shiftMap = mutableMapOf<Long, Long>()
+            shifts.forEach { s ->
+                val ne = empMap[s.employeeId] ?: return@forEach
+                val np = postMap[s.postId] ?: return@forEach
+                val same = oldShifts.find { it.employeeId == ne && it.postId == np && it.startAt == s.startAt }
+                shiftMap[s.id] = same?.id ?: dao.insertShift(s.copy(id = 0, employeeId = ne, postId = np))
+            }
+            incidents.forEach { i ->
+                val ns = shiftMap[i.shiftId] ?: return@forEach
+                val exists = oldIncidents.any { it.shiftId == ns && it.occurredAt == i.occurredAt && it.description == i.description }
+                if (!exists) dao.insertIncident(i.copy(id = 0, shiftId = ns))
             }
         }
     }
